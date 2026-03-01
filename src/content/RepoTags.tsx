@@ -38,19 +38,48 @@ const RepoTags = (props: IRepoTagsProps) => {
   );
   const [starHistory, setStarHistory] = useState(null);
 
+  const getStarredStatus = () => {
+    const legacyStarContainer = document.querySelector('.starring-container');
+    if (legacyStarContainer) {
+      return legacyStarContainer.className.includes(' on');
+    }
+
+    return !!document.querySelector(
+      'form.js-social-form button[aria-pressed="true"], [data-testid="unstar-button"]',
+    );
+  };
+
+  const isStarButtonClick = (target: EventTarget) => {
+    const el = target as Element;
+    if (!el || !el.closest) {
+      return false;
+    }
+
+    return !!el.closest(
+      '.starring-container, form.js-social-form, [data-testid="star-button"], [data-testid="unstar-button"]',
+    );
+  };
+
   const selectTagsProps: ISelectTagsProps = { ...props };
 
   useEffect(() => {
-    const starringContainer = document.querySelector('.starring-container');
-    const isStarred = starringContainer.className.includes(' on');
-    setStarred(isStarred);
+    setStarred(getStarredStatus());
 
-    starringContainer.addEventListener('click', handleStaringClick);
-    return () => {
-      starringContainer.removeEventListener('click', handleStaringClick);
+    const handleDocumentClick = (e: MouseEvent) => {
+      if (!isStarButtonClick(e.target)) {
+        return;
+      }
+
+      setTimeout(() => {
+        handleStaringClick(getStarredStatus());
+      });
     };
-    // fix starred effect
-  }, [starred]);
+
+    document.addEventListener('click', handleDocumentClick, true);
+    return () => {
+      document.removeEventListener('click', handleDocumentClick, true);
+    };
+  }, []);
 
   useEffect(() => {
     if (!starHistory) {
@@ -91,8 +120,8 @@ const RepoTags = (props: IRepoTagsProps) => {
     });
   }, [starHistory]);
 
-  const handleStaringClick = (e) => {
-    if (starred) {
+  const handleStaringClick = (isStarred: boolean) => {
+    if (!isStarred) {
       if (repoWithTags[repoId]) {
         delete repoWithTags[repoId];
         const newRepoWithTags = { ...repoWithTags };
@@ -100,19 +129,19 @@ const RepoTags = (props: IRepoTagsProps) => {
           .set({
             [STORAGE_REPO]: newRepoWithTags,
           })
-          .then(() => {
-            setStarred(!starred);
-          })
           .catch((e) => {
             // todo
             // tslint:disable-next-line:no-console
             console.error('errors: ', e);
           });
-        return;
       }
+
+      setStarred(false);
+      return;
     }
+
     setFocusSelect(true);
-    setStarred(!starred);
+    setStarred(true);
   };
   const handleNotesPressEnter = (
     e: React.KeyboardEvent<HTMLTextAreaElement>,
