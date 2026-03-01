@@ -2,16 +2,16 @@ export { default as StarFill } from '@ant-design/icons/lib/fill/StarFill';
 
 export {
   default as CheckCircleFill,
-} from '@ant-design/icons/lib/Fill/CheckCircleFill';
+} from '@ant-design/icons/lib/fill/CheckCircleFill';
 export {
   default as ExclamationCircleFill,
-} from '@ant-design/icons/lib/Fill/ExclamationCircleFill';
+} from '@ant-design/icons/lib/fill/ExclamationCircleFill';
 export {
   default as CloseCircleFill,
-} from '@ant-design/icons/lib/Fill/CloseCircleFill';
+} from '@ant-design/icons/lib/fill/CloseCircleFill';
 export {
   default as InfoCircleFill,
-} from '@ant-design/icons/lib/Fill/InfoCircleFill';
+} from '@ant-design/icons/lib/fill/InfoCircleFill';
 
 export {
   default as AlertOutline,
