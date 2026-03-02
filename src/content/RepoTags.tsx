@@ -13,7 +13,7 @@ import {
   Token,
 } from '../typings';
 import SelectTags, { ISelectTagsProps } from './SelectTags';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { localStoragePromise } from '../utils';
 import { Popover, Input, Button, message, Icon } from 'antd';
 import getStarHistory from './getStarHistory';
@@ -33,20 +33,37 @@ const RepoTags = (props: IRepoTagsProps) => {
   const { repoWithTags, repoWithNotes, repoId, repoNwo, token } = props;
   const [starred, setStarred] = useState(false);
   const [focusSelect, setFocusSelect] = useState(false);
+  const starredRef = useRef(false);
   const [notesValue, setNotesValue] = useState<string>(
     repoWithNotes[repoId] || '',
   );
   const [starHistory, setStarHistory] = useState(null);
 
   const getStarredStatus = () => {
+    // Legacy support
     const legacyStarContainer = document.querySelector('.starring-container');
     if (legacyStarContainer) {
       return legacyStarContainer.className.includes(' on');
     }
 
-    return !!document.querySelector(
-      'form.js-social-form button[aria-pressed="true"], [data-testid="unstar-button"]',
+    // Modern GitHub support
+    // Check for "Unstar" button existence which implies the repo is starred
+    const unstarBtn = document.querySelector(
+      'button[data-testid="unstar-button"], button.starred, button[aria-label^="Unstar"], form[action*="/unstar"] button'
     );
+    if (unstarBtn) return true;
+
+    // Check for button with aria-pressed="true" inside social form or any star button container
+    const pressedBtn = document.querySelector(
+      'form.js-social-form button[aria-pressed="true"], .starring-container button[aria-pressed="true"], button[aria-pressed="true"].js-toggler-target'
+    );
+    if (pressedBtn) return true;
+
+    // Check for container with "starred" class
+    const starredContainer = document.querySelector('.starred > button, .starred > form button');
+    if (starredContainer) return true;
+
+    return false;
   };
 
   const isStarButtonClick = (target: EventTarget) => {
@@ -56,23 +73,42 @@ const RepoTags = (props: IRepoTagsProps) => {
     }
 
     return !!el.closest(
-      '.starring-container, form.js-social-form, [data-testid="star-button"], [data-testid="unstar-button"]',
+      '.starring-container, form.js-social-form, [data-testid="star-button"], [data-testid="unstar-button"], button[aria-label*="star"], form[action*="/star"] button, .js-toggler-target'
     );
   };
 
   const selectTagsProps: ISelectTagsProps = { ...props };
 
   useEffect(() => {
-    setStarred(getStarredStatus());
+    const initialStarred = getStarredStatus();
+    starredRef.current = initialStarred;
+    setStarred(initialStarred);
+
+    const syncStarredStatus = () => {
+      let attempts = 0;
+      const check = () => {
+        const currentStarred = getStarredStatus();
+        if (currentStarred !== starredRef.current) {
+          starredRef.current = currentStarred;
+          handleStaringClick(currentStarred);
+          return;
+        }
+
+        attempts += 1;
+        if (attempts < 8) {
+          setTimeout(check, 250);
+        }
+      };
+
+      setTimeout(check, 0);
+    };
 
     const handleDocumentClick = (e: MouseEvent) => {
       if (!isStarButtonClick(e.target)) {
         return;
       }
 
-      setTimeout(() => {
-        handleStaringClick(getStarredStatus());
-      });
+      syncStarredStatus();
     };
 
     document.addEventListener('click', handleDocumentClick, true);

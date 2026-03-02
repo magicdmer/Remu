@@ -49,18 +49,20 @@ if (isUseExLoader) {
 pages.forEach(pageName => {
   entry[pageName] = path.join(srcDir, pageName, "index");
 
-  plugins.push(
-    new HtmlWebpackPlugin({
-      title:
-        pageName === "view-tab"
-          ? "Remu"
-          : `Remu - ${pageName.replace(/\w/, match => match.toUpperCase())}`,
-      filename: `${pageName}.html`,
-      root: pageName,
-      template: path.join(rootDir, "public", "index.html"),
-      chunks: [pageName],
-    }),
-  );
+  if (pageName !== 'background') {
+    plugins.push(
+      new HtmlWebpackPlugin({
+        title:
+          pageName === "view-tab"
+            ? "Remu"
+            : `Remu - ${pageName.replace(/\w/, match => match.toUpperCase())}`,
+        filename: `${pageName}.html`,
+        root: pageName,
+        template: path.join(rootDir, "public", "index.html"),
+        chunks: [pageName],
+      }),
+    );
+  }
 });
 
 module.exports = {

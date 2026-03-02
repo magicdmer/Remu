@@ -4,14 +4,9 @@ import {
   editGist,
   GistData,
   REMU_SYNC_FILENAME,
-} from './syncService';
-import {
-  syncStoragePromise,
-  localStoragePromise,
-  debounce,
-  genUniqueKey,
-} from '../utils';
-import { GistDataRsp } from './syncService';
+  GistDataRsp,
+} from './syncServiceSW';
+
 import {
   STORAGE_TOKEN,
   STORAGE_GIST_ID,
@@ -22,7 +17,95 @@ import {
   STORAGE_SETTINGS,
   STORAGE_NOTES,
 } from '../typings';
+
 import { DEFAULT_SYNCHRONIZING_DELAY } from '../constants';
+
+// --- Re-implement utilities to avoid importing 'antd' ---
+
+export const syncStoragePromise = {
+  get: (keys: string | string[] | Object | null) =>
+    new Promise((resolve, reject) => {
+      chrome.storage.sync.get(keys, (items) => {
+        const err = chrome.runtime.lastError;
+        if (err) {
+          reject(err);
+        } else {
+          resolve(items);
+        }
+      });
+    }),
+  set: (items: Object) =>
+    new Promise((resolve, reject) => {
+      chrome.storage.sync.set(items, () => {
+        const err = chrome.runtime.lastError;
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    }),
+};
+
+export const localStoragePromise = {
+  get: (keys: string | string[] | Object | null) =>
+    new Promise((resolve, reject) => {
+      chrome.storage.local.get(keys, (items) => {
+        const err = chrome.runtime.lastError;
+        if (err) {
+          reject(err);
+        } else {
+          resolve(items);
+        }
+      });
+    }),
+  set: (items: Object) =>
+    new Promise((resolve, reject) => {
+      chrome.storage.local.set(items, () => {
+        const err = chrome.runtime.lastError;
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    }),
+};
+
+export function debounce(func: Function, wait: number = 500, immediate: boolean = false) {
+  let timeout: any;
+  return function(this: any) {
+    const context = this;
+    const args = arguments;
+    const later = function() {
+      timeout = null;
+      if (!immediate) func.apply(context, args);
+    };
+    const callNow = immediate && !timeout;
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+    if (callNow) func.apply(context, args);
+  };
+}
+
+export function genUniqueKey(): string {
+  return (
+    Date.now()
+      .toString()
+      .slice(6) +
+    Math.random()
+      .toString()
+      .slice(2, 8)
+  );
+}
+
+// --- Background Logic ---
+
+const setBrowseAction = ({ title = '', text = '' }) => {
+  (chrome as any).action.setTitle({ title }); // V3 uses chrome.action
+  (chrome as any).action.setBadgeText({ text });
+  (chrome as any).action.setBadgeBackgroundColor({ color: [0, 0, 0, 0] });
+};
 
 export const initGist = () => {
   syncStoragePromise.get([STORAGE_TOKEN, STORAGE_GIST_ID]).then((result) => {
@@ -45,6 +128,7 @@ export interface ISyncInfo {
   token: string;
   gistId: string;
   updateAt?: string;
+  settings?: any;
 }
 
 export const initEnv = async () => {
@@ -57,42 +141,30 @@ export const initEnv = async () => {
     })
     .then<ISyncInfo>((results) => {
       const { token, gistId, updateAt, settings } = results as any;
-
-      window.REMU_GIST_ID = gistId;
-      window.REMU_TOKEN = token;
-      window.REMU_GIST_UPDATE_AT = updateAt;
-      window.REMU_SYNC_DELAY = +settings.synchronizingDelay;
+      // We don't set window globals here anymore. 
+      // The caller should use the returned values.
       return { token, gistId, updateAt, settings };
     });
 };
 
-export const checkSync = async (info) => {
+export const checkSync = async (info: ISyncInfo) => {
   const { token, gistId, updateAt } = info;
   if (token && gistId) {
     return getGist({ gistId, token }).then(({ data }) => {
       const gistUpdateAt = data.updated_at;
-      if (updateAt < gistUpdateAt) {
+      if (!updateAt || updateAt < gistUpdateAt) { // Handle case where updateAt is empty
         updateLocal(data);
-        // tslint:disable-next-line:no-console
         console.log('remu: update local');
       } else if (updateAt > gistUpdateAt) {
         updateGist(info);
-        // tslint:disable-next-line:no-console
         console.log('remu: update gist');
       } else {
-        // tslint:disable-next-line:no-console
         console.log('remu: up to date');
       }
     });
   } else {
     return Promise.resolve();
   }
-};
-
-const setBrowseAction = ({ title = '', text = '' }) => {
-  chrome.browserAction.setTitle({ title });
-  chrome.browserAction.setBadgeText({ text });
-  chrome.browserAction.setBadgeBackgroundColor({ color: [0, 0, 0, 0] });
 };
 
 export const updateGist = ({ token, gistId, updateAt }: ISyncInfo) => {
@@ -112,7 +184,7 @@ export const updateGist = ({ token, gistId, updateAt }: ISyncInfo) => {
                 [STORAGE_GIST_UPDATE_TIME]: data.updated_at,
               })
               .catch((errors) => {
-                chrome.browserAction.setBadgeBackgroundColor({
+                (chrome as any).action.setBadgeBackgroundColor({
                   color: [255, 0, 0, 255],
                 });
               })
@@ -131,12 +203,19 @@ export const updateGistDebounce = debounce(updateGist);
 
 export const updateLocal = (data: GistData) => {
   setBrowseAction({ title: 'update Local', text: '...' });
+  
+  // Need to safely parse content, check if file exists
+  if (!data.files[REMU_SYNC_FILENAME]) {
+    setBrowseAction({});
+    return Promise.reject('No sync file found');
+  }
+
   const content = data.files[REMU_SYNC_FILENAME].content;
   let _data;
   try {
     _data = JSON.parse(content);
   } catch (e) {
-    return Promise.reject();
+    return Promise.reject(e);
   }
   const { tags, repoWithTags, repoWithNotes } = _data;
   const setNewTagsAndRepoWithTags = localStoragePromise.set({
@@ -152,7 +231,7 @@ export const updateLocal = (data: GistData) => {
 
   return Promise.all([setNewTagsAndRepoWithTags, setUpdateAt])
     .catch((errors) => {
-      chrome.browserAction.setBadgeBackgroundColor({
+      (chrome as any).action.setBadgeBackgroundColor({
         color: [255, 0, 0, 255],
       });
     })
