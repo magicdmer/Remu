@@ -48,15 +48,13 @@ const injectApp = async () => {
       return;
     }
 
-    // Try multiple selectors for the navigation bar
+    // Only inject into the repository tab bar. Falling back to the global app
+    // header is brittle and can interfere with GitHub's own search/header UI.
     const selectors = [
       '.UnderlineNav-body',
       '#repository-container-header nav ul',
       'nav[aria-label="Repository"] ul',
       '.js-repo-nav ul',
-      // New Github Header structure
-      '.AppHeader-globalBar-start',
-      'div[data-component="Header"] nav ul'
     ];
 
     let repoTitleEl = null;
